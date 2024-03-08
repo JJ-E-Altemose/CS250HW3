@@ -32,7 +32,7 @@ public class TCPServer
         initializationMessage(portNumber);
 
         validatePortAndBind(portNumber);
-        randomGenerator.setSeed(seed);
+        randomGenerator = new Random(seed);
 
         awaitClientConnections();
         sendConfigToClients();

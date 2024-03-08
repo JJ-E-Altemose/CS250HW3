@@ -1,7 +1,9 @@
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 
 public class SubmissionOneClient
 {
@@ -21,11 +23,37 @@ public class SubmissionOneClient
         serverHostName = args[0];
         port = tryParseArgToNumbers(args[1]);
 
-        socket = tryGetSocket(serverHostName, port);
+        if(args.length == 3)
+        {
+            ipSearch(args, port);
+        }
+        else
+        {
+            socket = tryGetSocket(serverHostName, port);
+        }
         getSocketStreams();
 
         waitForConfig();
         configMessage();
+    }
+
+    private static void ipSearch(String[] args, int port)
+    {
+        String[] ipNum = args[2].split(".");
+        int index = 0;
+        byte[] bytes = new byte[4];
+        for (String num : ipNum)
+        {
+            Integer number = Integer.parseInt(num);
+            bytes[index] = number.byteValue();
+            index++;
+        }
+        try {
+            socket = new Socket(InetAddress.getByAddress(bytes).getHostAddress(), port);
+        } catch (IOException e)
+        {
+
+        }
     }
 
     private static void configMessage()
