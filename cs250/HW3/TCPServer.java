@@ -1,8 +1,12 @@
+package cs250.hw3;
+
+import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.Random;
 import java.util.Scanner;
 
@@ -17,42 +21,161 @@ public class TCPServer
     static Random randomGenerator;
 
     static int maxNumberOfMessages;
+    static Socket server;
 
-    public static void main(String[] args)
+    /**CONFIG INFO**/
+    static boolean submission3 = false;
+    static boolean submission2 = true || submission3;
+    static boolean submission1 = true || submission2;
+    /**           **/
+    private static void run(String[] args)
     {
-        int[] numberArgs;
-        int portNumber, seed;
+        if(submission1)
+        {
+            int[] numberArgs;
+            int portNumber, seed;
 
-        numberArgs = tryParseArgsToNumbers(args);
+            numberArgs = tryParseArgsToNumbers(args);
 
-        portNumber = numberArgs[0];
-        seed = numberArgs[1];
-        maxNumberOfMessages = numberArgs[2];
+            portNumber = numberArgs[0];
+            seed = numberArgs[1];
+            maxNumberOfMessages = numberArgs[2];
 
-        initializationMessage(portNumber);
+            initializationMessage(portNumber);
 
-        validatePortAndBind(portNumber);
-        randomGenerator = new Random(seed);
+            validatePortAndBind(portNumber);
+            randomGenerator = new Random(seed);
 
-        awaitClientConnections();
-        sendConfigToClients();
-        clientStatsMessage();
+            awaitClientConnections();
+            sendConfigToClients();
+            clientStatsMessage();
+        }
+        if(submission2)
+        {
+            receiveMessages();
+            printClientMessageStatistics();
+        }
+        if(submission3)
+        {
+            //informClientsNumberOfMessagesForwardedToIt();
+            forwardMessages();
+        }
+    }
 
+    public static void main(String[] args)//Client id And close clean
+    {
+        try
+        {
+            run(args);
+        }
+        catch(RuntimeException ignored){}
+        catch(Exception e)
+        {
+            e.getMessage();
+        }
+    }
+
+    private static void forwardMessages()
+    {
+        for (int from = 0; from < clients.length; from++)
+        {
+            for (int to = 0; to < clients.length; to++)
+            {
+                if(from != to)
+                {
+                    for(Integer message : clients[from].messages)
+                    {
+                        clients[to].trySendNumber(message);
+                    }
+                }
+            }
+        }
+    }
+    /*
+    private static void informClientsNumberOfMessagesForwardedToIt()
+    {
+        int number = (clients.length-1)*maxNumberOfMessages;
+        for (int clientIndex = 0; clientIndex < clients.length; clientIndex++)
+        {
+            informClientNumberOfMessagesForwardedToIt(clientIndex, number);
+        }
+    }
+
+    private static void informClientNumberOfMessagesForwardedToIt(int clientIndex, int number)
+    {
+        clients[clientIndex].trySendNumber(number);
+    }
+     */
+
+    private static void printClientMessageStatistics()
+    {
+        for(Client client : clients)
+        {
+            String Hostname = client.getSocket().getInetAddress().getHostName();
+            System.out.println(Hostname);
+            System.out.println("\tMessages received: " + client.messages.size());
+            System.out.println("\tSum received: " + getClientSum(client));
+        }
+    }
+
+    private static long getClientSum(Client client)
+    {
+        long sum = 0;
+        for(int message : client.messages)
+        {
+            sum += message;
+        }
+        return sum;
+    }
+
+    private static void receiveMessages()
+    {
+        System.out.println("Starting to listen for client messages...");
+        for (int clientID = 0; clientID < clients.length; clientID++)
+        {
+            for (int numberMessagesReceived = 0; numberMessagesReceived < maxNumberOfMessages; numberMessagesReceived++)
+            {
+                receiveMessage(clientID);
+            }
+        }
+        System.out.println("Finished listening for client messages.");
+    }
+
+    private static void receiveMessage(int clientIndex)
+    {
+        Client client = clients[clientIndex];
+        //client.trySendNumber(clientIndex);
+        client.messages.add(tryRead(clientIndex));
+    }
+
+    private static Integer tryRead(int clientIndex)
+    {
+        Integer Output = null;
+        try
+        {
+            Output = clients[clientIndex].dataInput.readInt();
+        }
+        catch (Exception e)
+        {
+            sendMessageAndClose(e.getMessage());
+        }
+        return Output;
     }
 
     private static void sendConfigToClients()
     {
         sendClientsMaxNumberOfMessages();
         sendClientSeeds();
+        //sendClientsIDS();
     }
 
     private static void clientStatsMessage()
     {
         for (Client client : clients)
         {
-            InetAddress clientInetAddress = client.getSocket().getInetAddress();
+            String clientHostName = client.getSocket().getInetAddress().getHostName();
             int clientSeed = client.getClientSeed();
-            System.out.println(clientInetAddress + " " + clientSeed);
+            System.out.println(clientHostName + " " + clientSeed);
         }
         System.out.println("Finished sending config to clients.");
     }
@@ -69,6 +192,20 @@ public class TCPServer
     {
         Client client = clients[clientIndex];
         client.trySendNumber(maxNumberOfMessages);
+    }
+
+    private static void sendClientsIDS()
+    {
+        for(int index = 0; index < clients.length; index++)
+        {
+            sendClientID(index);
+        }
+    }
+
+    private static void sendClientID(int clientIndex)
+    {
+        Client client = clients[clientIndex];
+        client.trySendNumber(clientIndex);
     }
 
     private static void sendClientSeeds()
@@ -91,7 +228,7 @@ public class TCPServer
         System.out.println("waiting for client...");
 
         int numberOfClientsConnected = 0;
-        while (numberOfClientsConnected != 2)
+        while (numberOfClientsConnected != clients.length)
         {
             Socket connectedSocket = acceptConnection();
             clients[numberOfClientsConnected] = new Client(connectedSocket);
@@ -104,7 +241,7 @@ public class TCPServer
     {
         String message =
                 "Clients Connected!\n" +
-                "Sending config to clients...";
+                        "Sending config to clients...";
 
         System.out.println(message);
     }
@@ -113,11 +250,16 @@ public class TCPServer
     {
         try
         {
-            return serverSocket.accept();
+            Socket socket = serverSocket.accept();
+            if(server == null)
+            {
+                server = socket;
+            }
+            return socket;
         }
         catch (Exception e)
         {
-            sendMessageAndClose("A FATAL ERROR HAS OCCURRED 0x616363657074436F6E6E656374696F6E");
+            sendMessageAndClose(e.getMessage());
         }
         return null;
     }
@@ -129,7 +271,7 @@ public class TCPServer
         String ip = inetAddress.getHostAddress();
         String initializationMessage =
                 "IP Address: " + hostname + "/" + ip + "\n" +
-                "Port Number " + portNumber;
+                        "Port Number " + portNumber;
 
         System.out.println(initializationMessage);
     }
@@ -142,7 +284,7 @@ public class TCPServer
         }
         catch (Exception e)
         {
-            sendMessageAndClose("A FATAL ERROR HAS OCCURRED 0x747279476574495041646472657373");
+            sendMessageAndClose(e.getMessage());
         }
         return null;
     }
@@ -150,15 +292,7 @@ public class TCPServer
     //<editor-fold desc="PortValidation">
     private static void validatePortAndBind(int port)
     {
-        if(!validPortNumber(port))
-        {
-            sendMessageAndClose("Error port numbers must be between 1024-65535 not " + port);
-        }
-        else
-        {
-            tryBindPort(port);
-        }
-
+        tryBindPort(port);
     }
 
     private static boolean validPortNumber(int port)
@@ -176,7 +310,8 @@ public class TCPServer
         }
         catch (Exception e)
         {
-            sendMessageAndClose("Address already in use (Bind failed)");
+            sendMessageAndClose(e.getMessage());
+            //sendMessageAndClose("Address already in use (Bind failed)");
         }
     }
     //</editor-fold>
@@ -189,7 +324,7 @@ public class TCPServer
         }
         catch (Exception e)
         {
-            throw new RuntimeException("Error One of the args is not a valid integer.");
+            throw new RuntimeException(e.getMessage());
         }
     }
 
@@ -206,7 +341,7 @@ public class TCPServer
     private static void sendMessageAndClose(String message)
     {
         System.out.println(message);
-        System.exit(-1);
+        throw new RuntimeException();
     }
 
 }
@@ -216,12 +351,14 @@ class Client
     DataInputStream dataInput;
     DataOutputStream dataOut;
     int clientSeed;
+    ArrayList<Integer> messages;
 
     public Client(Socket socket)
     {
         this.socket = socket;
         this.dataInput = tryGetInputStream();
         this.dataOut = tryGetOutputStream();
+        messages = new ArrayList<>();
     }
 
     public int getClientSeed()
@@ -253,11 +390,11 @@ class Client
     {
         try
         {
-            return new DataInputStream(socket.getInputStream());
+            return new DataInputStream(new BufferedInputStream(socket.getInputStream()));
         }
         catch (Exception e)
         {
-            sendMessageAndClose("A FATAL ERROR HAS OCCURRED 0x747279476574496E70757453747265616D");
+            sendMessageAndClose(e.getMessage());
         }
         return null;
     }
@@ -270,7 +407,7 @@ class Client
         }
         catch (Exception e)
         {
-            sendMessageAndClose("A FATAL ERROR HAS OCCURRED 0x747279476574496E70757453747265616D");
+            sendMessageAndClose(e.getMessage());
         }
         return null;
     }
@@ -284,15 +421,13 @@ class Client
         }
         catch (Exception e)
         {
-            sendMessageAndClose(
-                    "A FATAL ERROR HAS OCCURRED 0x74727953656E644E756D626572\n" +
-                            " make sure the client is still on and connected to the same network");
+            sendMessageAndClose(e.getMessage());
         }
     }
 
     private static void sendMessageAndClose(String message)
     {
         System.out.println(message);
-        System.exit(-1);
+        throw new RuntimeException();
     }
 }
